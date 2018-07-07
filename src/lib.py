@@ -20,8 +20,8 @@ class App:
 		# make the window full screen and quit when pressing 'Esc'
 		self.window.attributes('-fullscreen', True)
 		self.window.bind('<Escape>',lambda e: self.window.destroy())
-		self.win_w = self.window.winfo_width()
-		self.win_h = self.window.winfo_height()
+		self.win_w = self.window.winfo_screenwidth()
+		self.win_h = self.window.winfo_screenheight()
 		if debug:
 			print('win_w: %d\twin_h: %d\t' % (self.win_w, self.win_h))
 
