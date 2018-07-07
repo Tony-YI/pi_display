@@ -115,6 +115,9 @@ class App:
 		self.canvas.coords(self.photo_on_canvas, self.img_w/2, self.img_h/2)
 
 	def callbackChangeImgOnKey(self, event):
+		if self.debug:
+			print('changeImgOnKey() event: %s' % str(event))
+			
 		if event.keysym == 'Left':
 			print('Left')
 			if self.img_path_ind == 0:
@@ -130,6 +133,3 @@ class App:
 			else:
 				self.img_path_ind = self.img_path_ind + 1
 			self.updateCanvas(img_path=self.img_paths[self.img_path_ind])
-
-		if self.debug:
-			print('changeImgOnKey() event: %s' % event)
