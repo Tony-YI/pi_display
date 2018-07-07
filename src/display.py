@@ -1,4 +1,4 @@
 from lib import *
 
-img_path = '../img/angry_cat_2.jpg'
+img_path = '../img/'
 App(img_path, tkinter.Tk())
