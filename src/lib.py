@@ -7,20 +7,27 @@ def getFilenames(dir_name):
 
 class App:
 	def __init__(self, img_path, window, win_title='pi_display', win_bg='black', debug=True):
+		# create a window for displaying images
 		self.window, self.win_w, self.win_h = \
 			self.createWindow(window, win_title, win_bg, debug)
 		
+		# load the image from img_path
 		self.cv_img, self.img_w, self.img_h = \
 			self.loadImg(img_path, debug)
 
+		# resize the loaded image base on the window's size
 		self.cv_img, self.img_w, self.img_h = \
 			self.resizeImg(self.cv_img, self.img_w, self.img_h, self.win_w, self.win_h, debug)
 
+		# convert the loaded imaged to format that Tkinter used
 		self.photo = \
 			self.convertCVImgToPILImage(self.cv_img, debug)
 
+		# create a canvas to display the converted image
 		self.canvas = \
 			self.createCanvas(self.window, self.photo, self.img_w, self.img_h, debug)
+
+		tkinter.Button(window, text='Capture', commnad=changeImgOnKey)
 
 		# run the window loop
 		self.window.mainloop()
@@ -40,7 +47,6 @@ class App:
 		if debug:
 			print('win_w: %d\twin_h: %d\t' % (win_w, win_h))
 		return window, win_w, win_h
-
 
 	def loadImg(self, img_path, debug):
 		# load a image uisng OpenCV
@@ -80,3 +86,6 @@ class App:
 		canvas.create_image(img_w/2, img_h/2, 
 			image=photo, anchor=tkinter.CENTER) # center the image inside canvas
 		return canvas
+
+	def changeImgOnKey():
+		printf('changeImgOnKey()')
