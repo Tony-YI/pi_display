@@ -1,3 +1,4 @@
-from lib import test
+from lib import *
 
-test()
+img_path = '../img/angry_cat_2.jpg'
+App(img_path, tkinter.Tk())
