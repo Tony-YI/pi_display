@@ -1,5 +1,5 @@
 import os, sys
-import tkinter
+import tkinter, cv2, PIL.Image, PIL.ImageTk
 
 def getFilenames(dir_name):
 	filenames = os.listdir(dir_name)
