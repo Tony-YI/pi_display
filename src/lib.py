@@ -6,14 +6,13 @@ def getFilenames(dir_name):
 	return file_names
 
 class App:
-	def __init__(self, img_dir, window, win_title='pi_display', win_bg='black', debug=True):
+	def __init__(self, img_dir, win_title='pi_display', win_bg='black', debug=True):
 		# remove the .DS_Store if exist
 		file_names = getFilenames(img_dir)
 		if '.DS_Store' in file_names:
 			os.remove(img_dir + '.DS_Store')
 
 		# flag used to determine printing debug information or not
-		self.win_bg = win_bg
 		self.debug = debug
 		img_names = getFilenames(img_dir)
 		self.img_paths = [img_dir + img_name for img_name in img_names]
@@ -21,8 +20,9 @@ class App:
 			print(img_names)
 
 		# create a window for displaying images
+		self.win_bg = win_bg
 		self.window, self.win_w, self.win_h = \
-			self.createWindow(window, win_title, win_bg)
+			self.createWindow(win_title, win_bg)
 		
 		# load the first image from img_paths
 		self.cv_img, self.img_w, self.img_h = \
@@ -30,7 +30,7 @@ class App:
 		self.img_path_ind = 0
 		self.img_path_len = len(self.img_paths)
 
-		# resize the loaded image base on the window's size
+		# resize and pad the loaded image base on the window's size
 		self.cv_img, self.img_w, self.img_h = \
 			self.resizeImg(self.cv_img, self.img_w, self.img_h, self.win_w, self.win_h)
 
@@ -47,8 +47,9 @@ class App:
 		# run the window loop
 		self.window.mainloop()
 
-	def createWindow(self, window, win_title, win_bg):
+	def createWindow(self, win_title, win_bg):
 		# create a window and add a title to it
+		window = tkinter.Tk()
 		window.title(win_title)
 
 		# set the backgournd color to black
@@ -75,7 +76,7 @@ class App:
 
 	def resizeImg(self, cv_img, img_w, img_h, win_w, win_h):
 		# resize image to fit the window
-		if img_w > win_w or img_h > win_h:
+		if (img_w > win_w or img_h > win_h) or (img_w < win_w and img_h < win_h):
 			ratio = min(win_w/img_w, win_h/img_h)
 			img_w = int(img_w * ratio)
 			img_h = int(img_h * ratio)
@@ -83,6 +84,15 @@ class App:
 			if self.debug:
 				print('ratio: %f\tnew_img_w: %d\tnew_img_h: %d' 
 					% (ratio, img_w, img_h))
+
+		delta_w = win_w - img_w
+		delta_h = win_h - img_h
+		top, bottom = delta_h // 2, delta_h - (delta_h // 2)
+		left, right = delta_w // 2, delta_w - (delta_w // 2)
+		cv_img = cv2.copyMakeBorder(cv_img, top, bottom, left, right, cv2.BORDER_CONSTANT,
+		    value=[0,0,0]) # black
+
+		img_h, img_w, img_c = cv_img.shape
 		return cv_img, img_w, img_h
 
 	def convertCVImgToPILImage(self, cv_img):
@@ -91,7 +101,6 @@ class App:
 		return photo
 
 	def createCanvas(self, window, photo, img_w, img_h):
-		# create a canvas than can fit the above image
 		canvas = tkinter.Canvas(window, 
 			width=img_w, height=img_h, relief='flat', bg=self.win_bg, highlightthickness=0)
 		canvas.pack()
@@ -101,6 +110,34 @@ class App:
 		photo_on_canvas = canvas.create_image(img_w/2, img_h/2, 
 			image=photo, anchor=tkinter.CENTER) # center the image inside canvas
 		return photo_on_canvas, canvas
+
+	def overlay(self, cv_img_1, cv_img_2, alpha):
+		cv_img_2 = cv2.addWeighted(cv_img_1, alpha, cv_img_2, 1 - alpha, 0)
+		self.photo = self.convertCVImgToPILImage(cv_img_2)
+		self.canvas.itemconfig(self.photo_on_canvas, image=self.photo)
+		self.canvas.update()
+
+	def fadeOutAndIn(self, img_path):
+		# store the old photo
+		old_cv_img = self.cv_img.copy()
+
+		# load the new photo
+		self.cv_img, self.img_w, self.img_h = \
+			self.loadImg(img_path)
+		self.cv_img, self.img_w, self.img_h = \
+			self.resizeImg(self.cv_img, self.img_w, self.img_h, self.win_w, self.win_h)
+		temp_cv_img = self.cv_img.copy()
+		
+		alpha 		= 1.0
+		alpha_delta	= 0.05
+		while alpha > alpha_delta:
+			alpha -= alpha_delta
+			self.canvas.after(10, self.overlay(old_cv_img, temp_cv_img, alpha)) # ms
+		self.photo = self.convertCVImgToPILImage(self.cv_img)
+		self.canvas.itemconfig(self.photo_on_canvas, image=self.photo)
+
+	def fadeOutThenIn(self, img_path):
+		return 0
 
 	def updateCanvas(self, img_path):
 		self.cv_img, self.img_w, self.img_h = \
@@ -115,13 +152,17 @@ class App:
 		self.canvas.coords(self.photo_on_canvas, self.img_w/2, self.img_h/2)
 
 	def callbackChangeImgOnKey(self, event):
+		# un-bind <key>
+		self.window.unbind('<Key>')
+
 		if event.keysym == 'Left':
 			print('Left')
 			if self.img_path_ind == 0:
 				self.img_path_ind = self.img_path_len - 1
 			else:
 				self.img_path_ind = self.img_path_ind - 1
-			self.updateCanvas(img_path=self.img_paths[self.img_path_ind])
+			# self.updateCanvas(img_path=self.img_paths[self.img_path_ind])
+			self.fadeOutAndIn(img_path=self.img_paths[self.img_path_ind])
 
 		elif event.keysym == 'Right':
 			print('Right')
@@ -129,7 +170,11 @@ class App:
 				self.img_path_ind = 0
 			else:
 				self.img_path_ind = self.img_path_ind + 1
-			self.updateCanvas(img_path=self.img_paths[self.img_path_ind])
+			# self.updateCanvas(img_path=self.img_paths[self.img_path_ind])
+			self.fadeOutAndIn(img_path=self.img_paths[self.img_path_ind])
 
 		if self.debug:
 			print('changeImgOnKey() event: %s' % event)
+
+		# re-bind <key>
+		self.window.bind('<Key>', self.callbackChangeImgOnKey)
