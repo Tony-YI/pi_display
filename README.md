@@ -3,3 +3,4 @@
 * Hardware: Raspberry Pi 3b+
 * OS: Raspbiani
 ## Prerequisite
+* Python3.3+
