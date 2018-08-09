@@ -1,16 +1,24 @@
-import os, sys
+import os, sys, imghdr, imageio
 import tkinter, cv2, PIL.Image, PIL.ImageTk
+import numpy as np
 
 def getFilenames(dir_name):
 	file_names = os.listdir(dir_name)
 	return file_names
 
 class App:
-	def __init__(self, img_dir, win_title='pi_display', win_bg='black', debug=True):
+	def __init__(self, img_dir, update_effect='update', update_condic='onKey', debug=True):
 		# remove the .DS_Store if exist
 		file_names = getFilenames(img_dir)
 		if '.DS_Store' in file_names:
 			os.remove(img_dir + '.DS_Store')
+
+		# define some options here
+		self.update_img_effects = {'update', 'fadeOutAndIn', 'fadeOutThenIn'}
+		self.update_condictions = {'onKey', 'timeOut'}
+		self.img_types 			= {'img', 'gif'}
+		self.win_title 			= 'pi_display'
+		self.win_bg 			= 'black'
 
 		# flag used to determine printing debug information or not
 		self.debug = debug
@@ -20,29 +28,34 @@ class App:
 			print(img_names)
 
 		# create a window for displaying images
-		self.win_bg = win_bg
 		self.window, self.win_w, self.win_h = \
-			self.createWindow(win_title, win_bg)
-		
-		# load the first image from img_paths
-		self.cv_img, self.img_w, self.img_h = \
-			self.loadImg(self.img_paths[0])
+			self.createWindow(self.win_title, self.win_bg)
+
+		# create a black image with win_w x win_h for future usage
+		self.cur_img_type = 'img'
+		self.pre_img_type = self.cur_img_type
+		self.bg_cv_img = np.zeros((self.win_h, self.win_w, 3), np.uint8)
+
+		# create a canvas to display the background image
+		self.cur_cv_img = self.bg_cv_img.copy()
+		self.pre_cv_img = self.cur_cv_img.copy()
+		self.photo = self.convertCVImgToPILImage(self.cur_cv_img, self.cur_img_type)
+		self.cur_img_h, self.cur_img_w, self.cur_img_c = self.cur_cv_img.shape
+		self.pre_img_h, self.pre_img_w, self.pre_img_c = self.pre_cv_img.shape
+
+		self.photo_on_canvas, self.canvas = \
+			self.createCanvas(self.window, self.photo, self.cur_img_w, self.cur_img_h)
+
+		# select a effect for switching images
+		self.update_effect = update_effect
+		self.update_condic = update_condic
+
+		# get the index of images in img_dir
 		self.img_path_ind = 0
 		self.img_path_len = len(self.img_paths)
 
-		# resize and pad the loaded image base on the window's size
-		self.cv_img, self.img_w, self.img_h = \
-			self.resizeImg(self.cv_img, self.img_w, self.img_h, self.win_w, self.win_h)
-
-		# convert the loaded imaged to format that Tkinter used
-		self.photo = \
-			self.convertCVImgToPILImage(self.cv_img)
-
-		# create a canvas to display the converted image
-		self.photo_on_canvas, self.canvas = \
-			self.createCanvas(self.window, self.photo, self.img_w, self.img_h)
-
-		self.window.bind('<Key>', self.callbackChangeImgOnKey)
+		# display images
+		self.display()
 
 		# run the window loop
 		self.window.mainloop()
@@ -57,30 +70,57 @@ class App:
 
 		# make the window full screen and quit when pressing 'Esc'
 		window.attributes('-fullscreen', True)
-		window.bind('<Escape>',lambda e: window.destroy())
+		window.bind('<Escape>', lambda e: window.destroy())
 		win_w = window.winfo_screenwidth()
 		win_h = window.winfo_screenheight()
 		if self.debug:
 			print('win_w: %d\twin_h: %d\t' % (win_w, win_h))
 		return window, win_w, win_h
 
-	def loadImg(self, img_path):
-		# load a image uisng OpenCV
-		cv_img = cv2.imread(img_path)
-		cv_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB) # convet BGR to RGB
-		img_h, img_w, img_c = cv_img.shape
-		if self.debug:
-			print('ori_img_w: %d\tori_img_h: %d\tori_img_c: %d' 
-				% (img_w, img_h, img_c))
-		return cv_img, img_w, img_h
+	def cpoyCurImgToPreImg(self):
+		self.pre_cv_img 	= self.cur_cv_img.copy()
+		self.pre_img_type 	= self.cur_img_type
+		self.pre_img_w		= self.cur_img_w
+		self.pre_img_h		= self.cur_img_h
+		self.pre_img_c		= self.cur_img_c
 
-	def resizeImg(self, cv_img, img_w, img_h, win_w, win_h):
+	def loadImg(self, img_path):
+		file_type = imghdr.what(img_path)
+
+		if file_type == 'gif':
+			img_type = 'gif'
+			# load a image uisng imageio
+			cv_img = imageio.mimread(img_path)
+			img_h, img_w, img_c = cv_img[0].shape
+			if self.debug:
+				print('ori_img_w: %d\tori_img_h: %d\tori_img_c: %d' 
+					% (img_w, img_h, img_c))
+			return cv_img, img_w, img_h, img_type
+
+		elif file_type == 'png' or file_type == 'jpeg':
+			img_type = 'img'
+			# load a image uisng OpenCV
+			cv_img = cv2.imread(img_path)
+			cv_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB) # convet BGR to RGB
+			img_h, img_w, img_c = cv_img.shape
+			if self.debug:
+				print('ori_img_w: %d\tori_img_h: %d\tori_img_c: %d' 
+					% (img_w, img_h, img_c))
+			return cv_img, img_w, img_h, img_type
+		else:
+			printf('Errot: loadImg() => invalid file type %s' % file_type)
+			sys.exit()
+
+	def resizeImg(self, cv_img, img_w, img_h, win_w, win_h, img_type):
 		# resize image to fit the window
 		if (img_w > win_w or img_h > win_h) or (img_w < win_w and img_h < win_h):
 			ratio = min(win_w/img_w, win_h/img_h)
 			img_w = int(img_w * ratio)
 			img_h = int(img_h * ratio)
-			cv_img = cv2.resize(cv_img, (img_w, img_h))
+			if img_type == 'img':
+				cv_img = cv2.resize(cv_img, (img_w, img_h))
+			elif img_type == 'gif':
+				cv_img = [cv2.resize(img, (img_w, img_h)) for img in cv_img]
 			if self.debug:
 				print('ratio: %f\tnew_img_w: %d\tnew_img_h: %d' 
 					% (ratio, img_w, img_h))
@@ -89,16 +129,25 @@ class App:
 		delta_h = win_h - img_h
 		top, bottom = delta_h // 2, delta_h - (delta_h // 2)
 		left, right = delta_w // 2, delta_w - (delta_w // 2)
-		cv_img = cv2.copyMakeBorder(cv_img, top, bottom, left, right, cv2.BORDER_CONSTANT,
-		    value=[0,0,0]) # black
+		if img_type == 'img':
+			cv_img = cv2.copyMakeBorder(cv_img, top, bottom, left, right, cv2.BORDER_CONSTANT,
+				value=[0,0,0]) # black
+			img_h, img_w, img_c = cv_img.shape
+			return cv_img, img_w, img_h
+		elif img_type == 'gif':
+			cv_img = [cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT,
+				value=[0,0,0]) for img in cv_img] # black
+			img_h, img_w, img_c = cv_img[0].shape
+			return cv_img, img_w, img_h
 
-		img_h, img_w, img_c = cv_img.shape
-		return cv_img, img_w, img_h
-
-	def convertCVImgToPILImage(self, cv_img):
+	def convertCVImgToPILImage(self, cv_img, img_type):
 		# use Pillow to convert the Numpy ndarray to a PhotoImage
-		photo = PIL.ImageTk.PhotoImage(image=PIL.Image.fromarray(cv_img))
-		return photo
+		if img_type == 'img':
+			photo = PIL.ImageTk.PhotoImage(image=PIL.Image.fromarray(cv_img))
+			return photo
+		elif img_type == 'gif':
+			photo = [PIL.ImageTk.PhotoImage(image=PIL.Image.fromarray(img)) for img in cv_img]
+			return photo
 
 	def createCanvas(self, window, photo, img_w, img_h):
 		canvas = tkinter.Canvas(window, 
@@ -111,70 +160,159 @@ class App:
 			image=photo, anchor=tkinter.CENTER) # center the image inside canvas
 		return photo_on_canvas, canvas
 
-	def overlay(self, cv_img_1, cv_img_2, alpha):
-		cv_img_2 = cv2.addWeighted(cv_img_1, alpha, cv_img_2, 1 - alpha, 0)
-		self.photo = self.convertCVImgToPILImage(cv_img_2)
-		self.canvas.itemconfig(self.photo_on_canvas, image=self.photo)
-		self.canvas.update()
+	def effectFadeOutAndIn(self, pre_cv_img, pre_img_type, cur_cv_img, cur_img_type, alpha=100):
+		next_alpha = alpha - 10
+		if next_alpha >= 0:
+			temp_cv_img = cv2.addWeighted(pre_cv_img, next_alpha/100.0, cur_cv_img, (100-next_alpha)/100.0, 0)
+			self.photo = self.convertCVImgToPILImage(temp_cv_img, 'img')
+			self.canvas.itemconfig(self.photo_on_canvas, image=self.photo)
+			self.canvas.update()	
+			self.canvas.after(10, self.effectFadeOutAndIn, 
+				pre_cv_img, pre_img_type, cur_cv_img, pre_img_type, next_alpha)
+		else:
+			if self.update_condic == 'onKey':
+				self.window.bind('<Key>', self.callbackChangeImgOnKey) # re-bind <key>
+			elif self.update_condic == 'timeOut':
+				self.window.after(5000, self.callbackChangeImgTimeOut)
 
-	def fadeOutAndIn(self, img_path):
-		# store the old photo
-		old_cv_img = self.cv_img.copy()
+	def effectFadeOutThenIn(self, pre_cv_img, pre_img_type, cur_cv_img, cur_img_type, alpha=100):
+		next_alpha = alpha - 10
+		if next_alpha >= 0:
+			temp_cv_img = cv2.addWeighted(pre_cv_img, next_alpha/100.0,
+				self.bg_cv_img, (100-next_alpha)/100.0, 0)
+			self.photo = self.convertCVImgToPILImage(temp_cv_img, 'img')
+			self.canvas.itemconfig(self.photo_on_canvas, image=self.photo)
+			self.canvas.update()			
+			self.canvas.after(10, self.effectFadeOutThenIn,
+				pre_cv_img, pre_img_type, cur_cv_img, cur_img_type, next_alpha)
+		elif next_alpha < 0 and next_alpha >= -100:
+			temp_cv_img = cv2.addWeighted(cur_cv_img, abs(next_alpha/100.0), 
+				self.bg_cv_img, (1-abs(next_alpha))/100.0, 0)
+			self.photo = self.convertCVImgToPILImage(temp_cv_img, 'img')
+			self.canvas.itemconfig(self.photo_on_canvas, image=self.photo)
+			self.canvas.update()			
+			self.canvas.after(10, self.effectFadeOutThenIn,
+				pre_cv_img, pre_img_type, cur_cv_img, cur_img_type, next_alpha)
+		else:
+			if self.update_condic == 'onKey':
+				self.window.bind('<Key>', self.callbackChangeImgOnKey) # re-bind <key>
+			elif self.update_condic == 'timeOut':
+				self.window.after(5000, self.callbackChangeImgTimeOut)
 
-		# load the new photo
-		self.cv_img, self.img_w, self.img_h = \
-			self.loadImg(img_path)
-		self.cv_img, self.img_w, self.img_h = \
-			self.resizeImg(self.cv_img, self.img_w, self.img_h, self.win_w, self.win_h)
-		temp_cv_img = self.cv_img.copy()
-		
-		alpha 		= 1.0
-		alpha_delta	= 0.05
-		while alpha > alpha_delta:
-			alpha -= alpha_delta
-			self.canvas.after(10, self.overlay(old_cv_img, temp_cv_img, alpha)) # ms
-		self.photo = self.convertCVImgToPILImage(self.cv_img)
-		self.canvas.itemconfig(self.photo_on_canvas, image=self.photo)
+	def effectUpdate(self, cv_img, img_type):
+		self.photo = self.convertCVImgToPILImage(cv_img, img_type)
+		if img_type == 'img':
+			self.displayImg()
+		elif img_type == 'gif':
+			self.displayGif()
 
-	def fadeOutThenIn(self, img_path):
-		return 0
-
-	def updateCanvas(self, img_path):
-		self.cv_img, self.img_w, self.img_h = \
-			self.loadImg(img_path)
-		self.cv_img, self.img_w, self.img_h = \
-			self.resizeImg(self.cv_img, self.img_w, self.img_h, self.win_w, self.win_h)
-		self.photo = \
-			self.convertCVImgToPILImage(self.cv_img)
-		# reconfigure canvas size and the image on it
-		self.canvas.configure(width=self.img_w, height=self.img_h)
-		self.canvas.itemconfig(self.photo_on_canvas, image=self.photo)
-		self.canvas.coords(self.photo_on_canvas, self.img_w/2, self.img_h/2)
+		if self.update_condic == 'onKey':
+			self.window.bind('<Key>', self.callbackChangeImgOnKey) # re-bind <key>
+		elif self.update_condic == 'timeOut':
+			self.window.after(5000, self.callbackChangeImgTimeOut)
 
 	def callbackChangeImgOnKey(self, event):
 		# un-bind <key>
 		self.window.unbind('<Key>')
 
+		update_img_flag = False
 		if event.keysym == 'Left':
-			print('Left')
 			if self.img_path_ind == 0:
 				self.img_path_ind = self.img_path_len - 1
 			else:
 				self.img_path_ind = self.img_path_ind - 1
-			# self.updateCanvas(img_path=self.img_paths[self.img_path_ind])
-			self.fadeOutAndIn(img_path=self.img_paths[self.img_path_ind])
+			update_img_flag = True
 
 		elif event.keysym == 'Right':
-			print('Right')
 			if self.img_path_ind == self.img_path_len - 1:
 				self.img_path_ind = 0
 			else:
 				self.img_path_ind = self.img_path_ind + 1
-			# self.updateCanvas(img_path=self.img_paths[self.img_path_ind])
-			self.fadeOutAndIn(img_path=self.img_paths[self.img_path_ind])
+			update_img_flag = True
+
+		if update_img_flag:
+			self.cpoyCurImgToPreImg()
+			self.cur_cv_img, self.cur_img_w, self.cur_img_h, self.cur_img_type = \
+				self.loadImg(self.img_paths[self.img_path_ind])
+			self.cur_cv_img, self.cur_img_w, self.cur_img_h = \
+				self.resizeImg(self.cur_cv_img, self.cur_img_w, self.cur_img_h,
+					self.win_w, self.win_h, self.cur_img_type)
+
+			if self.update_effect == 'update':
+				self.effectUpdate(self.cur_cv_img, self.cur_img_type)
+			elif self.update_effect == 'fadeOutAndIn':
+				self.effectFadeOutAndIn(self.pre_cv_img, self.pre_img_type, self.cur_cv_img, self.cur_img_type)
+			elif self.update_effect == 'fadeOutThenIn':
+				self.effectFadeOutThenIn(self.pre_cv_img, self.pre_img_type, self.cur_cv_img, self.cur_img_type)
 
 		if self.debug:
-			print('changeImgOnKey() event: %s' % event)
+			print('changeImgOnKey() event: %s' % event.keysym)
 
-		# re-bind <key>
-		self.window.bind('<Key>', self.callbackChangeImgOnKey)
+	def callbackChangeImgTimeOut(self):
+		if self.img_path_ind == self.img_path_len - 1:
+			self.img_path_ind = 0
+		else:
+			self.img_path_ind = self.img_path_ind + 1
+
+		self.cpoyCurImgToPreImg()
+		self.cur_cv_img, self.cur_img_w, self.cur_img_h, self.cur_img_type = \
+			self.loadImg(self.img_paths[self.img_path_ind])
+		self.cur_cv_img, self.cur_img_w, self.cur_img_h = \
+			self.resizeImg(self.cur_cv_img, self.cur_img_w, self.cur_img_h,
+				self.win_w, self.win_h, self.cur_img_type)
+
+		if self.update_effect == 'update':
+			self.effectUpdate(self.cur_cv_img, self.cur_img_type)
+		elif self.update_effect == 'fadeOutAndIn':
+			self.effectFadeOutAndIn(self.pre_cv_img, self.pre_img_type, self.cur_cv_img, self.cur_img_type)
+		elif self.update_effect == 'fadeOutThenIn':
+			self.effectFadeOutThenIn(self.pre_cv_img, self.pre_img_type, self.cur_cv_img, self.cur_img_type)
+
+	def setUpdateEffect(self, update_effect):
+		if update_effect not in self.update_img_effects:
+			print('Warning: setUpdateEffect() => No such update_effect: %s, change to default.'
+				% self.update_effect)
+			self.update_effect = 'update'
+
+	def setUpdateCondiction(self, update_condic):
+		if update_condic == 'onKey':
+			self.window.bind('<Key>', self.callbackChangeImgOnKey)
+		elif update_condic == 'timeOut':
+			self.window.after(5000, self.callbackChangeImgTimeOut)
+		else:
+			print('Warning: setUpdateCondiction() => No such update_condic: %s, change to default.'
+				% update_condic)
+			self.window.bind('<Key>', self.callbackChangeImgOnKey)
+
+	def displayImg(self):
+		self.canvas.itemconfig(self.photo_on_canvas, image=self.photo)
+		self.canvas.update()
+
+	def displayGif(self, frame=0):
+		print('current frame: %d' % frame)
+		next_frame = 0
+		if frame + 1 < len(self.photo):
+			next_frame = frame + 1
+		else:
+			next_frame = 0
+		self.canvas.itemconfig(self.photo_on_canvas, image=self.photo[frame])
+		self.canvas.update()
+		self.canvas.after(15, self.displayGif, next_frame)
+
+	def display(self):
+		self.cpoyCurImgToPreImg()
+		self.cur_cv_img, self.cur_img_w, self.cur_img_h, self.cur_img_type = \
+			self.loadImg(self.img_paths[0])
+		self.cur_cv_img, self.cur_img_w, self.cur_img_h = \
+			self.resizeImg(self.cur_cv_img, self.cur_img_w, self.cur_img_h,
+				self.win_w, self.win_h, self.cur_img_type)
+		self.photo = \
+			self.convertCVImgToPILImage(self.cur_cv_img, self.cur_img_type)
+
+		if self.cur_img_type == 'img':
+			self.displayImg()
+		elif self.cur_img_type == 'gif':
+			self.displayGif()
+
+		self.setUpdateEffect(self.update_effect)
+		self.setUpdateCondiction(self.update_condic)
